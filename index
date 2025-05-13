@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A Fantastical Birthday for Polly!</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(45deg, #ff9a9e 0%, #fad0c4 99%, #fad0c4 100%); /* Playful gradient */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', fantasy; /* Whimsical font */
+        }
+
+        #scene-container {
+            width: 90vw; /* Responsive width */
+            height: 90vh; /* Responsive height */
+            max-width: 1000px; /* Max size */
+            max-height: 700px;
+            position: relative; /* For absolute positioning of overlays */
+            box-shadow: 0 0 30px rgba(0,0,0,0.2);
+            border-radius: 20px;
+            background-color: #1a001a; /* Dark, magical backdrop for 3D scene */
+        }
+
+        #threejs-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border-radius: 20px;
+        }
+
+        /* UI Elements */
+        .birthday-title {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 2.5em; /* Responsive font size would be better with vw/vh or media queries */
+            text-shadow: 2px 2px 5px #ff00ff;
+            z-index: 10;
+            text-align: center;
+            padding: 0 10px;
+        }
+
+        .interactive-button {
+            position: absolute;
+            bottom: 30px;
+            padding: 12px 25px;
+            font-size: 1.2em;
+            color: white;
+            background-color: #ff69b4; /* Hot pink */
+            border: 3px solid #fff;
+            border-radius: 50px; /* Fun, pillowy shape */
+            cursor: pointer;
+            box-shadow: 0 5px #c71585; /* MediumVioletRed */
+            transition: all 0.1s ease-in-out;
+            z-index: 10;
+        }
+
+        .interactive-button:active {
+            transform: translateY(3px);
+            box-shadow: 0 2px #c71585;
+        }
+
+        #blow-candles-button {
+            left: 30%;
+            transform: translateX(-50%);
+        }
+
+        #launch-fireworks-button {
+            right: 30%;
+            transform: translateX(50%);
+            background-color: #ffd700; /* Gold */
+            box-shadow: 0 5px #b8860b; /* DarkGoldenrod */
+        }
+         #launch-fireworks-button:active {
+            box-shadow: 0 2px #b8860b;
+        }
+
+        /* For Matter.js - if rendering to a separate canvas or DOM elements */
+        #matter-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Allow clicks to pass through to Three.js canvas unless interacting with Matter objects */
+            z-index: 5; /* Below UI buttons, above Three.js if needed for visual layering */
+        }
+        .matter-object { /* Example style if you render Matter.js bodies as DOM elements */
+            background-color: rgba(128,0,128,0.7); /* Purple, semi-transparent */
+            border: 2px solid gold;
+            border-radius: 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 0.8em;
+            text-align: center;
+            padding: 5px;
+            box-sizing: border-box;
+            /* Matter.js will control position and size if tied to DOM elements */
+        }
+
+    </style>
+</head>
+<body>
+    <div id="scene-container">
+        <div class="birthday-title" id="main-title">🎉 Happy Birthday, Polly! 🎉</div>
+        <canvas id="threejs-canvas"></canvas>
+        <div id="matter-container"></div> <button id="blow-candles-button" class="interactive-button">🌬️ Blow Out Candles!</button>
+        <button id="launch-fireworks-button" class="interactive-button">🎆 Launch Firework!</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+
+    <script>
+        // --- Global Variables ---
+        let scene, camera, renderer;
+        let cake, candles = [], flames = [], allCandlesLit = true;
+        let matterEngine, matterWorld, matterRenderer; // Matter.js specific
+        const interactiveObjects = []; // For Matter.js objects
+
+        // DOM Elements
+        const sceneContainer = document.getElementById('scene-container');
+        const threeCanvas = document.getElementById('threejs-canvas');
+        const mainTitle = document.getElementById('main-title');
+        const blowCandlesButton = document.getElementById('blow-candles-button');
+        const launchFireworksButton = document.getElementById('launch-fireworks-button');
+        const matterContainer = document.getElementById('matter-container');
+
+        // --- Cheeky Helper Functions ---
+        function randomCheekyColor() {
+            const colors = [0xff69b4, 0xdda0dd, 0x87cefa, 0x32cd32, 0xffd700, 0xffa07a];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        // --- Three.js Setup ---
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            // scene.fog = new THREE.Fog(0x1a001a, 20, 50); // Optional magical fog
+
+            camera = new THREE.PerspectiveCamera(75, sceneContainer.clientWidth / sceneContainer.clientHeight, 0.1, 1000);
+            camera.position.set(0, 8, 18); // Adjusted camera position
+            camera.lookAt(0, 3, 0);
+
+            renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true, alpha: true }); // alpha for potential transparency over body bg
+            renderer.setSize(sceneContainer.clientWidth, sceneContainer.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(10, 15, 10);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 50;
+            scene.add(dirLight);
+
+            createCake();
+            createCandlesOnCake(5); // Let's add 5 candles
+            createGround(); // For shadows
+        }
+
+        function createGround() {
+            const groundGeo = new THREE.PlaneGeometry(50, 50);
+            const groundMat = new THREE.ShadowMaterial({ opacity: 0.4 }); // Receives shadows
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = -0.05; // Slightly below the cake
+            ground.receiveShadow = true;
+            scene.add(ground);
+        }
+
+
+        function createCake() {
+            const cakeGroup = new THREE.Group();
+
+            // Layers of the cake
+            const mainLayerMat = new THREE.MeshPhongMaterial({ color: 0xdda0dd, shininess: 50 }); // Lavender
+            const mainLayerGeo = new THREE.CylinderGeometry(4, 4.5, 2.5, 32); // Slightly tapered
+            const mainLayer = new THREE.Mesh(mainLayerGeo, mainLayerMat);
+            mainLayer.castShadow = true;
+            mainLayer.receiveShadow = true;
+            mainLayer.position.y = 1.25;
+            cakeGroup.add(mainLayer);
+
+            const frostingMat = new THREE.MeshPhongMaterial({ color: 0x98fb98, shininess: 80 }); // PaleGreen / Mint
+            const frostingGeo = new THREE.TorusGeometry(4.25, 0.5, 16, 100); // Frosting ring
+            const frosting = new THREE.Mesh(frostingGeo, frostingMat);
+            frosting.rotation.x = Math.PI / 2;
+            frosting.position.y = 2.5; // Top of main layer
+            frosting.castShadow = true;
+            cakeGroup.add(frosting);
+
+            const topLayerMat = new THREE.MeshPhongMaterial({ color: 0xffb6c1, shininess: 60 }); // LightPink
+            const topLayerGeo = new THREE.CylinderGeometry(2.5, 3, 2, 32);
+            const topLayer = new THREE.Mesh(topLayerGeo, topLayerMat);
+            topLayer.castShadow = true;
+            topLayer.receiveShadow = true;
+            topLayer.position.y = mainLayer.position.y + 2.5 / 2 + 2 / 2 + 0.2; // Stacked
+            cakeGroup.add(topLayer);
+
+            cake = cakeGroup;
+            scene.add(cake);
+
+            // Cheeky jiggle for the cake
+            anime({
+                targets: cake.rotation,
+                y: [
+                    { value: '-=0.05', duration: 1800, easing: 'easeInOutSine' },
+                    { value: '+=0.1', duration: 2200, easing: 'easeInOutSine' },
+                    { value: '-=0.05', duration: 2000, easing: 'easeInOutSine' },
+                ],
+                loop: true,
+                direction: 'alternate'
+            });
+             anime({
+                targets: cake.position,
+                y: [
+                    { value: '+=0.1', duration: 1500, easing: 'easeInOutQuad' },
+                    { value: '-=0.1', duration: 1500, easing: 'easeInOutQuad' },
+                ],
+                loop: true,
+                direction: 'alternate',
+                delay: 500
+            });
+        }
+
+        function createCandlesOnCake(numCandles) {
+            const cakeTopY = cake.children[2].position.y + cake.children[2].geometry.parameters.height / 2; // Top of the smaller cylinder
+            const cakeTopRadius = cake.children[2].geometry.parameters.radiusTop * 0.7; // Place them inwards a bit
+
+            for (let i = 0; i < numCandles; i++) {
+                const angle = (i / numCandles) * Math.PI * 2;
+                const x = Math.cos(angle) * cakeTopRadius;
+                const z = Math.sin(angle) * cakeTopRadius;
+
+                // Candle body
+                const candleHeight = 1.5;
+                const candleRadius = 0.15;
+                const candleGeo = new THREE.CylinderGeometry(candleRadius, candleRadius * 0.8, candleHeight, 12); // Slightly tapered
+                const candleMat = new THREE.MeshPhongMaterial({ color: randomCheekyColor(), shininess: 30 });
+                const candle = new THREE.Mesh(candleGeo, candleMat);
+                candle.castShadow = true;
+                candle.position.set(x, cakeTopY + candleHeight / 2, z);
+                candle.rotation.y = Math.random() * Math.PI; // Jaunty angle
+                candles.push({ mesh: candle, lit: true, id: `candle-${i}` });
+                cake.add(candle); // Add to cake group so they move with it
+
+                // Flame (using a small sphere with emissive material)
+                const flameGeo = new THREE.SphereGeometry(candleRadius * 1.1, 16, 16); // A bit larger than candle radius
+                const flameMat = new THREE.MeshBasicMaterial({ color: 0xffaa33, transparent: true, opacity: 0.9 });
+                const flame = new THREE.Mesh(flameGeo, flameMat);
+                flame.position.set(x, cakeTopY + candleHeight + candleRadius * 0.6, z); // Position flame on top of candle
+                flames.push(flame);
+                cake.add(flame); // Add to cake group
+
+                // Anime.js for flame flicker
+                anime({
+                    targets: flame.scale,
+                    x: [0.8, 1.2, 0.7, 1.3, 1],
+                    y: [1.2, 0.8, 1.3, 0.7, 1],
+                    duration: () => anime.random(300, 600),
+                    loop: true,
+                    direction: 'alternate',
+                    easing: 'easeInOutSine'
+                });
+                anime({
+                    targets: flame.material,
+                    opacity: [0.7, 0.95, 0.6, 1, 0.8],
+                    duration: () => anime.random(250, 500),
+                    loop: true,
+                    direction: 'alternate',
+                    easing: 'linear'
+                });
+            }
+        }
+
+        function handleBlowOutCandles() {
+            if (!allCandlesLit) {
+                 // Relight candles with a cheeky message
+                mainTitle.textContent = "✨ Poof! They're back! ✨";
+                flames.forEach((flame, index) => {
+                    candles[index].lit = true;
+                    flame.visible = true;
+                    anime({
+                        targets: flame.scale,
+                        x: 1, y: 1, z: 1,
+                        duration: 500,
+                        delay: index * 100,
+                        easing: 'easeOutElastic'
+                    });
+                    anime({
+                        targets: flame.material,
+                        opacity: 0.9,
+                        duration: 500,
+                        delay: index * 100,
+                    });
+                });
+                allCandlesLit = true;
+                blowCandlesButton.textContent = "🌬️ Blow Out Candles!";
+                setTimeout(() => mainTitle.textContent = "🎉 Happy Birthday, Polly! 🎉", 2000);
+                return;
+            }
+
+            allCandlesLit = false;
+            mainTitle.textContent = "🎂 Make a Wish, Polly! 🎂";
+            flames.forEach((flame, index) => {
+                if (candles[index].lit) {
+                    candles[index].lit = false;
+                    anime({
+                        targets: flame.scale,
+                        x: 0, y: 0, z: 0,
+                        duration: 300,
+                        delay: index * 80,
+                        easing: 'easeInQuad',
+                        complete: () => flame.visible = false
+                    });
+                     anime({
+                        targets: flame.material,
+                        opacity: 0,
+                        duration: 300,
+                        delay: index * 80,
+                    });
+                }
+            });
+            blowCandlesButton.textContent = "🕯️ Relight Candles?";
+
+            // Cheeky sound effect (conceptual)
+            // playSound('poof.mp3');
+
+            // Trigger confetti or a small celebration
+            setTimeout(launchCelebrationConfetti, 500);
+        }
+
+        function launchCelebrationConfetti() {
+            // Use Anime.js to create some DOM-based confetti for simplicity here
+            for (let i = 0; i < 50; i++) {
+                const confettiPiece = document.createElement('div');
+                confettiPiece.style.position = 'absolute';
+                confettiPiece.style.width = anime.random(5, 15) + 'px';
+                confettiPiece.style.height = anime.random(8, 20) + 'px';
+                confettiPiece.style.backgroundColor = `hsl(${anime.random(0, 360)}, 100%, 70%)`;
+                confettiPiece.style.left = anime.random(0, 100) + '%';
+                confettiPiece.style.top = '-20px'; // Start above screen
+                confettiPiece.style.transform = `rotate(${anime.random(-180, 180)}deg)`;
+                sceneContainer.appendChild(confettiPiece); // Add to scene container to overlay
+
+                anime({
+                    targets: confettiPiece,
+                    top: '110%', // Fall to bottom
+                    translateX: () => anime.random(-100, 100) + 'px', // Sideways drift
+                    rotate: () => anime.random(360, 720) + 'deg',
+                    opacity: [1, 0],
+                    duration: anime.random(2000, 4000),
+                    easing: 'easeInSine',
+                    delay: anime.random(0, 300),
+                    complete: () => {
+                        confettiPiece.remove();
+                    }
+                });
+            }
+        }
+
+
+        // --- Fireworks (Three.js Particles) ---
+        function launchSingleFirework() {
+            const numParticles = anime.random(80, 150);
+            const fireworkColor = new THREE.Color(randomCheekyColor());
+            const particleMaterial = new THREE.PointsMaterial({
+                color: fireworkColor,
+                size: 0.3,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending, // For a nice bright effect
+                depthWrite: false // Particles don't obscure each other as much
+            });
+
+            const particlesGeometry = new THREE.BufferGeometry();
+            const positions = [];
+
+            // Starting point of the firework (rocket phase)
+            const startX = anime.random(-5, 5);
+            const startY = 0;
+            const startZ = anime.random(-5, 5);
+
+            const rocketGeo = new THREE.SphereGeometry(0.2, 8, 8);
+            const rocketMat = new THREE.MeshBasicMaterial({ color: fireworkColor, emissive: fireworkColor, emissiveIntensity: 2});
+            const rocket = new THREE.Mesh(rocketGeo, rocketMat);
+            rocket.position.set(startX, startY, startZ);
+            scene.add(rocket);
+
+            const targetY = anime.random(12, 20); // Explosion height
+            const targetX = startX + anime.random(-3, 3);
+            const targetZ = startZ + anime.random(-3, 3);
+
+            // Animate rocket ascent with Anime.js
+            anime({
+                targets: rocket.position,
+                x: targetX,
+                y: targetY,
+                z: targetZ,
+                duration: anime.random(800, 1500),
+                easing: 'easeOutQuad',
+                update: function(anim) { // Create a trail
+                    if(Math.random() < 0.3) { // Don't add too many trail particles
+                        const trailParticleGeo = new THREE.SphereGeometry(0.05, 4, 4);
+                        const trailParticleMat = new THREE.MeshBasicMaterial({color: fireworkColor, transparent: true, opacity: 0.7});
+                        const trailParticle = new THREE.Mesh(trailParticleGeo, trailParticleMat);
+                        trailParticle.position.copy(rocket.position);
+                        scene.add(trailParticle);
+                        anime({
+                            targets: trailParticle.scale,
+                            x:0, y:0, z:0,
+                            duration: anime.random(500,1000),
+                            easing: 'linear',
+                            complete: () => scene.remove(trailParticle)
+                        });
+                    }
+                },
+                complete: () => {
+                    scene.remove(rocket); // Rocket disappears
+
+                    // Explosion
+                    const explosionParticles = [];
+                    for (let i = 0; i < numParticles; i++) {
+                        positions.push(targetX, targetY, targetZ); // All start at explosion center
+                        explosionParticles.push({
+                            velocity: new THREE.Vector3(
+                                (Math.random() - 0.5) * 0.5,
+                                (Math.random() - 0.5) * 0.5,
+                                (Math.random() - 0.5) * 0.5
+                            ),
+                            life: anime.random(80, 120) // Frames
+                        });
+                    }
+                    particlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                    const particleSystem = new THREE.Points(particlesGeometry, particleMaterial);
+                    scene.add(particleSystem);
+
+                    // Animate particles exploding outwards using Anime.js on the buffer attribute
+                    // This is a bit more complex; simpler is to animate individual small meshes if performance allows
+                    // For a Points system, you'd update the 'position' attribute in the animation loop
+                    // Here's a conceptual animation of the system itself fading:
+                    anime({
+                        targets: particleMaterial,
+                        opacity: 0,
+                        size: 0.01,
+                        duration: anime.random(1000, 2000),
+                        easing: 'easeInExpo',
+                        delay: 200, // Let them expand a bit first
+                        complete: () => {
+                            scene.remove(particleSystem);
+                            particlesGeometry.dispose();
+                            particleMaterial.dispose();
+                        }
+                    });
+
+                    // Animate individual particle movements (if not using the optimized Points attribute update)
+                    const currentPositions = particleSystem.geometry.attributes.position;
+                    anime({
+                        duration: anime.random(1200, 1800),
+                        easing: 'easeOutExpo',
+                        update: function () {
+                            for (let i = 0; i < numParticles; i++) {
+                                currentPositions.array[i * 3] += explosionParticles[i].velocity.x;     // x
+                                currentPositions.array[i * 3 + 1] += explosionParticles[i].velocity.y; // y
+                                currentPositions.array[i * 3 + 2] += explosionParticles[i].velocity.z; // z
+                                explosionParticles[i].velocity.y -= 0.003; // Gravity
+                            }
+                            currentPositions.needsUpdate = true;
+                        }
+                    });
+                }
+            });
+            mainTitle.textContent = "✨ KA-POW! ✨";
+            setTimeout(() => mainTitle.textContent = "🎉 Happy Birthday, Polly! 🎉", 1500);
+        }
+
+
+        // --- Matter.js Setup (Cheeky Presents) ---
+        function initMatterJS() {
+            matterEngine = Matter.Engine.create();
+            matterWorld = matterEngine.world;
+            matterEngine.world.gravity.y = 0.3; // Softer gravity for a floaty feel
+
+            // Optional: Visual renderer for Matter.js (good for debugging)
+            /*
+            matterRenderer = Matter.Render.create({
+                element: matterContainer, // Render inside the matter-container div
+                engine: matterEngine,
+                options: {
+                    width: sceneContainer.clientWidth,
+                    height: sceneContainer.clientHeight,
+                    wireframes: true, // Show outlines
+                    background: 'transparent' // Transparent so Three.js scene shows
+                }
+            });
+            Matter.Render.run(matterRenderer);
+            */
+
+
+            // Add boundaries (invisible walls for presents)
+            const wallThickness = 100;
+            Matter.World.add(matterWorld, [
+                Matter.Bodies.rectangle(sceneContainer.clientWidth / 2, -wallThickness / 2, sceneContainer.clientWidth, wallThickness, { isStatic: true }), // Top
+                Matter.Bodies.rectangle(sceneContainer.clientWidth / 2, sceneContainer.clientHeight + wallThickness / 2, sceneContainer.clientWidth, wallThickness, { isStatic: true }), // Bottom
+                Matter.Bodies.rectangle(-wallThickness / 2, sceneContainer.clientHeight / 2, wallThickness, sceneContainer.clientHeight, { isStatic: true }), // Left
+                Matter.Bodies.rectangle(sceneContainer.clientWidth + wallThickness / 2, sceneContainer.clientHeight / 2, wallThickness, sceneContainer.clientHeight, { isStatic: true })  // Right
+            ]);
+
+            // Create some "presents" (DOM elements controlled by Matter.js)
+            const presentTexts = ["A Giggle!", "Sparkles!", "Joy!", "A Pony*", "*Virtual Pony"];
+            for (let i = 0; i < 4; i++) {
+                const size = anime.random(50, 80);
+                const x = anime.random(size, sceneContainer.clientWidth - size);
+                const y = anime.random(-150, -50); // Start above the screen
+
+                // Create DOM element for the present
+                const presentDiv = document.createElement('div');
+                presentDiv.classList.add('matter-object');
+                presentDiv.style.width = size + 'px';
+                presentDiv.style.height = size + 'px';
+                presentDiv.style.backgroundColor = `hsl(${anime.random(180, 300)}, 70%, 60%)`; // Purples, blues
+                presentDiv.innerHTML = `🎁<br>${presentTexts[i%presentTexts.length]}`;
+                matterContainer.appendChild(presentDiv); // Add to its own container
+
+                // Create Matter.js body
+                const presentBody = Matter.Bodies.rectangle(x, y, size, size, {
+                    restitution: 0.6, // Bounciness
+                    friction: 0.05,
+                    angle: Math.random() * Math.PI,
+                    render: { /* fillStyle: 'transparent', strokeStyle: 'transparent' */ } // Make default Matter render invisible if using DOM elements
+                });
+
+                interactiveObjects.push({ div: presentDiv, body: presentBody });
+                Matter.World.add(matterWorld, presentBody);
+
+                // Make presents draggable (requires Matter.MouseConstraint)
+                presentDiv.addEventListener('mousedown', (e) => {
+                     // Simple pop animation on click
+                    anime({
+                        targets: presentDiv,
+                        scale: [1, 1.3, 1],
+                        rotate: '+=15deg',
+                        duration: 300,
+                        easing: 'easeOutElastic'
+                    });
+                    mainTitle.textContent = `${presentTexts[i%presentTexts.length]} for Polly!`;
+                     setTimeout(() => mainTitle.textContent = "🎉 Happy Birthday, Polly! 🎉", 2000);
+                });
+            }
+
+            // Add mouse control for dragging Matter.js objects
+            const mouse = Matter.Mouse.create(sceneContainer); // Use sceneContainer for mouse events for Matter
+            const mouseConstraint = Matter.MouseConstraint.create(matterEngine, {
+                mouse: mouse,
+                constraint: {
+                    stiffness: 0.1,
+                    render: { visible: false } // Don't render the constraint line
+                }
+            });
+            Matter.World.add(matterWorld, mouseConstraint);
+             // Allow clicks to pass through matter container to threejs if not on a matter object
+            matterContainer.style.pointerEvents = 'none';
+            interactiveObjects.forEach(obj => obj.div.style.pointerEvents = 'auto');
+
+
+            Matter.Engine.run(matterEngine);
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update Matter.js DOM elements to match physics bodies
+            interactiveObjects.forEach(obj => {
+                obj.div.style.left = (obj.body.position.x - obj.div.offsetWidth / 2) + 'px';
+                obj.div.style.top = (obj.body.position.y - obj.div.offsetHeight / 2) + 'px';
+                obj.div.style.transform = `rotate(${obj.body.angle}rad)`;
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Event Listeners ---
+        blowCandlesButton.addEventListener('click', handleBlowOutCandles);
+        launchFireworksButton.addEventListener('click', launchSingleFirework);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = sceneContainer.clientWidth / sceneContainer.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(sceneContainer.clientWidth, sceneContainer.clientHeight);
+            // If using Matter.js renderer, also resize it:
+            /*
+            if (matterRenderer) {
+                matterRenderer.canvas.width = sceneContainer.clientWidth;
+                matterRenderer.canvas.height = sceneContainer.clientHeight;
+                Matter.Render.lookAt(matterRenderer, { // Recenter view
+                    min: { x: 0, y: 0 },
+                    max: { x: sceneContainer.clientWidth, y: sceneContainer.clientHeight }
+                });
+            }
+            */
+        });
+
+        // --- Initial Cheeky Title Animation ---
+        function initialAnimations() {
+            anime({
+                targets: mainTitle,
+                translateY: [-50, 0],
+                opacity: [0, 1],
+                rotate: ['-5deg', '0deg', '3deg', '0deg'],
+                scale: [0.8, 1],
+                duration: 1500,
+                delay: 300,
+                elasticity: 400
+            });
+
+            anime({
+                targets: '.interactive-button',
+                translateY: [50, 0],
+                opacity: [0, 1],
+                scale: [0.7, 1],
+                duration: 1200,
+                delay: anime.stagger(200, {start: 800}),
+                easing: 'easeOutElastic(1, .7)'
+            });
+        }
+
+
+        // --- Initialize Everything ---
+        initThreeJS();
+        initMatterJS(); // Initialize Matter.js for presents
+        initialAnimations();
+        animate();
+
+        // Add a little cheeky message to the console for fun
+        console.log("Psst, Polly! Hope your birthday is as fantastic as this virtual world! 🥳 - From your friend!");
+
+    </script>
+</body>
+</html>
